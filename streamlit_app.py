@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import runpy
 import shutil
@@ -95,9 +96,23 @@ def _write_config() -> None:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
 
+def _patch_streamlit_page_paths() -> None:
+    """Make st.Page paths resolvable from this launcher entrypoint."""
+    app_path = SOURCE_ROOT / "web" / "app.py"
+    source = app_path.read_text(encoding="utf-8")
+
+    for page_path in (SOURCE_ROOT / "web" / "pages").glob("*.py"):
+        relative_literal = json.dumps(f"pages/{page_path.name}", ensure_ascii=False)
+        absolute_literal = json.dumps(str(page_path), ensure_ascii=False)
+        source = source.replace(relative_literal, absolute_literal)
+
+    app_path.write_text(source, encoding="utf-8")
+
+
 def main() -> None:
     _download_source()
     _write_config()
+    _patch_streamlit_page_paths()
     os.environ.setdefault("PIXELLE_VIDEO_ROOT", str(SOURCE_ROOT))
     os.environ.setdefault("BROWSER_EXECUTABLE_PATH", "/usr/bin/chromium")
     os.environ.setdefault("CHROME_BIN", "/usr/bin/chromium")
