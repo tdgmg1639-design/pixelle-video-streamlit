@@ -113,9 +113,16 @@ def main() -> None:
     _download_source()
     _write_config()
     _patch_streamlit_page_paths()
+    secrets = _streamlit_secrets()
+    comfyui_secrets = dict(secrets.get("comfyui", {}))
     os.environ.setdefault("PIXELLE_VIDEO_ROOT", str(SOURCE_ROOT))
     os.environ.setdefault("BROWSER_EXECUTABLE_PATH", "/usr/bin/chromium")
     os.environ.setdefault("CHROME_BIN", "/usr/bin/chromium")
+    os.environ.setdefault(
+        "RUNNINGHUB_BASE_URL",
+        comfyui_secrets.get("runninghub_base_url")
+        or os.getenv("PIXELLE_RUNNINGHUB_BASE_URL", "https://www.runninghub.cn"),
+    )
 
     os.chdir(SOURCE_ROOT)
     sys.path.insert(0, str(SOURCE_ROOT))
