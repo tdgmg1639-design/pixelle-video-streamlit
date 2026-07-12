@@ -20,6 +20,7 @@ model = "gpt-4o"
 
 [comfyui]
 runninghub_api_key = "your-runninghub-api-key"
+runninghub_base_url = "https://www.runninghub.cn"
 runninghub_concurrent_limit = 1
 runninghub_instance_type = ""
 ```
