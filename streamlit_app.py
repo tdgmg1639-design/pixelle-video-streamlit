@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import runpy
 import shutil
 import sys
@@ -17,6 +18,57 @@ SOURCE_URL = "https://github.com/AIDC-AI/Pixelle-Video/archive/refs/tags/v0.1.15
 APP_DIR = Path(__file__).resolve().parent
 CACHE_DIR = APP_DIR / ".pixelle_source"
 SOURCE_ROOT = CACHE_DIR / "Pixelle-Video-0.1.15"
+
+
+def _redact_secrets(value: object, secrets: tuple[str, ...]) -> object:
+    if isinstance(value, str):
+        redacted = value
+        for secret in secrets:
+            if secret:
+                redacted = redacted.replace(secret, "[REDACTED]")
+        return re.sub(r"sk-(?:proj-)?[A-Za-z0-9_-]{8,}", "[REDACTED]", redacted)
+    if isinstance(value, tuple):
+        return tuple(_redact_secrets(item, secrets) for item in value)
+    if isinstance(value, list):
+        return [_redact_secrets(item, secrets) for item in value]
+    if isinstance(value, dict):
+        return {key: _redact_secrets(item, secrets) for key, item in value.items()}
+    return value
+
+
+def _install_secret_redaction() -> None:
+    """Prevent upstream UI errors from rendering API credentials."""
+    import streamlit as st
+
+    secrets = _streamlit_secrets()
+    llm = dict(secrets.get("llm", {}))
+    comfyui = dict(secrets.get("comfyui", {}))
+    known_secrets = tuple(
+        str(value)
+        for value in (
+            llm.get("api_key"),
+            comfyui.get("comfyui_api_key"),
+            comfyui.get("runninghub_api_key"),
+            os.getenv("OPENAI_API_KEY"),
+            os.getenv("PIXELLE_LLM_API_KEY"),
+            os.getenv("PIXELLE_COMFYUI_API_KEY"),
+            os.getenv("PIXELLE_RUNNINGHUB_API_KEY"),
+        )
+        if value
+    )
+
+    original_error = st.error
+    original_exception = st.exception
+
+    def safe_error(body: object, *args: object, **kwargs: object):
+        return original_error(_redact_secrets(body, known_secrets), *args, **kwargs)
+
+    def safe_exception(exception: BaseException, *args: object, **kwargs: object):
+        sanitized = RuntimeError(str(_redact_secrets(str(exception), known_secrets)))
+        return original_exception(sanitized, *args, **kwargs)
+
+    st.error = safe_error
+    st.exception = safe_exception
 
 
 def _download_source() -> None:
@@ -113,6 +165,7 @@ def main() -> None:
     _download_source()
     _write_config()
     _patch_streamlit_page_paths()
+    _install_secret_redaction()
     secrets = _streamlit_secrets()
     comfyui_secrets = dict(secrets.get("comfyui", {}))
     os.environ.setdefault("PIXELLE_VIDEO_ROOT", str(SOURCE_ROOT))
