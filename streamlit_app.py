@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -26,7 +27,11 @@ def _redact_secrets(value: object, secrets: tuple[str, ...]) -> object:
         for secret in secrets:
             if secret:
                 redacted = redacted.replace(secret, "[REDACTED]")
-        return re.sub(r"sk-(?:proj-)?[A-Za-z0-9_-]{8,}", "[REDACTED]", redacted)
+        return re.sub(
+            r"sk-(?:proj-)?(?:[A-Za-z0-9_-]|\*){4,}",
+            "[REDACTED]",
+            redacted,
+        )
     if isinstance(value, tuple):
         return tuple(_redact_secrets(item, secrets) for item in value)
     if isinstance(value, list):
@@ -148,6 +153,31 @@ def _write_config() -> None:
         yaml.safe_dump(config, f, allow_unicode=True, sort_keys=False)
 
 
+def _reload_runtime_config() -> None:
+    """Reload cached upstream state when Streamlit secrets change."""
+    import streamlit as st
+
+    secrets = _streamlit_secrets()
+    relevant_config = {
+        "llm": dict(secrets.get("llm", {})),
+        "comfyui": dict(secrets.get("comfyui", {})),
+    }
+    config_hash = hashlib.sha256(
+        json.dumps(relevant_config, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    if st.session_state.get("_pixelle_launcher_config_hash") != config_hash:
+        st.session_state.pop("pixelle_video", None)
+        st.session_state.pop("pixelle_video_config_hash", None)
+        st.session_state["_pixelle_launcher_config_hash"] = config_hash
+
+    config_module = sys.modules.get("pixelle_video.config")
+    if config_module is not None:
+        config_manager = getattr(config_module, "config_manager", None)
+        if config_manager is not None:
+            config_manager.reload()
+
+
 def _patch_streamlit_page_paths() -> None:
     """Make st.Page paths resolvable from this launcher entrypoint."""
     app_path = SOURCE_ROOT / "web" / "app.py"
@@ -164,6 +194,7 @@ def _patch_streamlit_page_paths() -> None:
 def main() -> None:
     _download_source()
     _write_config()
+    _reload_runtime_config()
     _patch_streamlit_page_paths()
     _install_secret_redaction()
     secrets = _streamlit_secrets()
