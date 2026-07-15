@@ -1,4 +1,7 @@
 ﻿__pycache__/
 *.pyc
+.env
+.env.*
+!.env.example
 .pixelle_source/
 streamlit-test.*.log
